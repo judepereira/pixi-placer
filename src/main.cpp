@@ -2,7 +2,6 @@
 // Created by Jude Pereira on 25/05/2025.
 //
 #include <Arduino.h>
-#include "FastAccelStepper.h"
 #include "PixiPlacer.h"
 
 PixiPlacer *pixiPlacer = nullptr;
