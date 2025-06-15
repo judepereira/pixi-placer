@@ -3,7 +3,7 @@
 //
 
 #include <Arduino.h>
-#include "FastAccelStepper.h"
+#include <AccelStepper.h>
 #include "PixiAxis.h"
 
 #ifndef PIXI_PLACER_PIXIPLACER_H
@@ -12,10 +12,9 @@
 
 class PixiPlacer {
 private:
-    FastAccelStepperEngine engine = FastAccelStepperEngine();
-    FastAccelStepper *stepperX = nullptr;
-    FastAccelStepper *stepperY = nullptr;
-    FastAccelStepper *stepperHead = nullptr;
+    AccelStepper *stepperX = nullptr;
+    AccelStepper *stepperY = nullptr;
+    AccelStepper *stepperHead = nullptr;
     PixiAxis xAxis, yAxis;
     PixiHomingHelper xHomingHelper, yHomingHelper;
 
@@ -23,7 +22,11 @@ private:
 
     void loopHoming();
 
-    void log(const char *fmt...);
+    void log(String a);
+    void log(String a, String b);
+    void log(String a, String b, String c);
+    void log(String a, String b, String c, String d);
+    void log(String a, String b, String c, String d, String e);
 
 public:
     void init();

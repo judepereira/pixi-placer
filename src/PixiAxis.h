@@ -3,7 +3,7 @@
 //
 
 #include "Arduino.h"
-#include "FastAccelStepper.h"
+#include "AccelStepper.h"
 #include <format>
 #include <iostream>
 
@@ -27,7 +27,7 @@ struct PixiAxis {
 struct PixiHomingHelper {
     bool startHit = false;
     bool endHit = false;
-    FastAccelStepper *stepper = nullptr;
+    AccelStepper *stepper = nullptr;
     PixiAxis *axis = nullptr;
 };
 

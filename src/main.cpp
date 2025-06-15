@@ -8,7 +8,6 @@ PixiPlacer *pixiPlacer = nullptr;
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial);
     pixiPlacer = new PixiPlacer();
     pixiPlacer->init();
 }

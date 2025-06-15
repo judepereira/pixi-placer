@@ -26,32 +26,21 @@
 #define PIXI_HEAD_STEP_PIN 11
 
 #define PIXI_STEPPER_SPEED_BEFORE_HOMING    1000
-#define PIXI_STEPPER_SPEED_AFTER_HOMING    6000
+#define PIXI_STEPPER_SPEED_AFTER_HOMING    10000
 
 void PixiPlacer::init() {
-    engine.init();
+    stepperX = new AccelStepper(AccelStepper::DRIVER, PIXI_X_AXIS_STEP_PIN, PIXI_X_AXIS_DIR_PIN);
+    stepperY = new AccelStepper(AccelStepper::DRIVER, PIXI_Y_AXIS_STEP_PIN, PIXI_Y_AXIS_DIR_PIN);
+    stepperHead = new AccelStepper(AccelStepper::DRIVER, PIXI_HEAD_STEP_PIN, PIXI_HEAD_DIR_PIN);
 
-    stepperX = engine.stepperConnectToPin(PIXI_X_AXIS_STEP_PIN);
-    stepperY = engine.stepperConnectToPin(PIXI_Y_AXIS_STEP_PIN);
-    stepperHead = engine.stepperConnectToPin(PIXI_HEAD_STEP_PIN);
+    for (int pin: {PIXI_X_AXIS_ENABLE_PIN, PIXI_Y_AXIS_ENABLE_PIN, PIXI_HEAD_ENABLE_PIN}) {
+        pinMode(pin, PinMode::OUTPUT);
+        digitalWrite(pin, LOW);
+    }
 
-    if (stepperX && stepperY && stepperHead) {
-        stepperX->setDirectionPin(PIXI_X_AXIS_DIR_PIN);
-        stepperX->setEnablePin(PIXI_X_AXIS_ENABLE_PIN);
-
-        stepperY->setDirectionPin(PIXI_Y_AXIS_DIR_PIN);
-        stepperY->setEnablePin(PIXI_Y_AXIS_ENABLE_PIN);
-
-        stepperHead->setDirectionPin(PIXI_HEAD_DIR_PIN);
-        stepperHead->setEnablePin(PIXI_HEAD_ENABLE_PIN);
-
-        for (FastAccelStepper *stepper: {stepperX, stepperY, stepperHead}) {
-            stepper->setAutoEnable(true);
-            stepper->setSpeedInHz(PIXI_STEPPER_SPEED_BEFORE_HOMING);
-            stepper->setAcceleration(PIXI_STEPPER_SPEED_BEFORE_HOMING);
-        }
-    } else {
-        die("One or more stepper motors failed to initialise!");
+    for (AccelStepper *stepper: {stepperX, stepperY, stepperHead}) {
+        stepper->setMaxSpeed(PIXI_STEPPER_SPEED_BEFORE_HOMING);
+        stepper->setAcceleration(100000);
     }
 
     for (uint8_t pin: {PIXI_LIMIT_X_START_PIN, PIXI_LIMIT_X_END_PIN,
@@ -64,9 +53,13 @@ void PixiPlacer::init() {
     yAxis.name = "Y";
 
     homing = true;
+    log("Init complete!");
 }
 
 void PixiPlacer::loop() {
+    stepperX->run();
+    stepperY->run();
+    stepperHead->run();
     if (homing) {
         loopHoming();
         return;
@@ -76,8 +69,8 @@ void PixiPlacer::loop() {
 void PixiPlacer::loopHoming() {
     if (millis() > 30000) {
         // Homing too long, disable steppers and bail.
-        for (FastAccelStepper *stepper: {stepperX, stepperY, stepperHead}) {
-            stepper->forceStop();
+        for (AccelStepper *stepper: {stepperX, stepperY, stepperHead}) {
+            stepper->stop();
         }
         die("Unable to home!");
     }
@@ -88,16 +81,17 @@ void PixiPlacer::loopHoming() {
 
         yHomingHelper.stepper = stepperY;
         yHomingHelper.axis = &yAxis;
+        log("Homing helpers initialised");
     }
 
-    bool yStartHit = digitalReadFast(PIXI_LIMIT_Y1_START_PIN)
-                     || digitalReadFast(PIXI_LIMIT_Y1_START_PIN);
+    bool yStartHit = !digitalReadFast(PIXI_LIMIT_Y1_START_PIN)
+                     || !digitalReadFast(PIXI_LIMIT_Y2_START_PIN);
 
-    bool yEndHit = digitalReadFast(PIXI_LIMIT_Y1_END_PIN)
-                   || digitalReadFast(PIXI_LIMIT_Y1_END_PIN);
+    bool yEndHit = !digitalReadFast(PIXI_LIMIT_Y1_END_PIN)
+                   || !digitalReadFast(PIXI_LIMIT_Y2_END_PIN);
 
-    bool xStartHit = digitalReadFast(PIXI_LIMIT_X_START_PIN);
-    bool xEndHit = digitalReadFast(PIXI_LIMIT_X_END_PIN);
+    bool xStartHit = !digitalReadFast(PIXI_LIMIT_X_START_PIN);
+    bool xEndHit = !digitalReadFast(PIXI_LIMIT_X_END_PIN);
 
     xHomingHelper.startHit = xStartHit;
     xHomingHelper.endHit = xEndHit;
@@ -105,21 +99,29 @@ void PixiPlacer::loopHoming() {
     yHomingHelper.endHit = yEndHit;
 
     for (PixiHomingHelper h: {xHomingHelper, yHomingHelper}) {
-        if (h.startHit && h.endHit) {
+        if (h.axis->maxSteps != 0) {
+            continue;
+        } else if (h.startHit && h.endHit) {
             die("Invalid state - multiple ends hit!");
         } else if (h.startHit) {
-            h.stepper->forceStopAndNewPosition(0);
+            h.stepper->stop();
+            h.stepper->runToPosition();
+            h.stepper->setCurrentPosition(0);
             h.stepper->moveTo(INT32_MAX);
         } else if (h.endHit) {
-            h.axis->maxSteps = h.stepper->getCurrentPosition();
-            h.stepper->forceStopAndNewPosition(h.axis->maxSteps);
-            h.stepper->setSpeedInHz(PIXI_STEPPER_SPEED_AFTER_HOMING);
+            h.axis->maxSteps = h.stepper->currentPosition();
+            h.stepper->stop();
+            h.stepper->runToPosition();
+            h.stepper->setCurrentPosition(h.axis->maxSteps);
+            h.stepper->setMaxSpeed(PIXI_STEPPER_SPEED_AFTER_HOMING);
             h.stepper->setAcceleration(PIXI_STEPPER_SPEED_AFTER_HOMING);
             h.stepper->moveTo(0);
-            log(h.axis->name, " end hit, max steps=", h.axis->maxSteps);
+            log(h.axis->name, " end hit, max steps=", String(h.axis->maxSteps));
         } else if (!(h.stepper->isRunning())) {
             if (h.axis->maxSteps == 0) { // Not discovered yet.
+                log(h.stepper->isRunning() ? "running" : "not running");
                 h.stepper->moveTo(INT32_MIN);
+                log("Moving", h.axis->name);
             }
         }
     }
@@ -130,13 +132,49 @@ void PixiPlacer::loopHoming() {
     }
 }
 
-void PixiPlacer::log(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    Serial.printf(fmt, args);
+
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "performance-unnecessary-value-param"
+#pragma ide diagnostic ignored "readability-convert-member-functions-to-static"
+#pragma ide diagnostic ignored "ConstantParameter"
+#pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
+
+void PixiPlacer::log(String a) {
+    Serial.printf(a.c_str());
     Serial.println();
-    va_end(args);
 }
+
+void PixiPlacer::log(String a, String b) {
+    Serial.printf(a.c_str());
+    Serial.printf(b.c_str());
+    Serial.println();
+}
+
+void PixiPlacer::log(String a, String b, String c) {
+    Serial.printf(a.c_str());
+    Serial.printf(b.c_str());
+    Serial.printf(c.c_str());
+    Serial.println();
+}
+
+void PixiPlacer::log(String a, String b, String c, String d) {
+    Serial.printf(a.c_str());
+    Serial.printf(b.c_str());
+    Serial.printf(c.c_str());
+    Serial.printf(d.c_str());
+    Serial.println();
+}
+
+void PixiPlacer::log(String a, String b, String c, String d, String e) {
+    Serial.printf(a.c_str());
+    Serial.printf(b.c_str());
+    Serial.printf(c.c_str());
+    Serial.printf(d.c_str());
+    Serial.printf(e.c_str());
+    Serial.println();
+}
+
+#pragma clang diagnostic pop
 
 void PixiPlacer::die(const char *reason) {
     while (true) {
