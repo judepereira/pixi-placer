@@ -114,7 +114,7 @@ void PixiPlacer::loopHoming() {
             h.stepper->runToPosition();
             h.stepper->setCurrentPosition(h.axis->maxSteps);
             h.stepper->setMaxSpeed(PIXI_STEPPER_SPEED_AFTER_HOMING);
-            h.stepper->setAcceleration(PIXI_STEPPER_SPEED_AFTER_HOMING);
+            h.stepper->setAcceleration(PIXI_STEPPER_SPEED_AFTER_HOMING * 2);
             h.stepper->moveTo(0);
             log(h.axis->name, " end hit, max steps=", String(h.axis->maxSteps));
         } else if (!(h.stepper->isRunning())) {
